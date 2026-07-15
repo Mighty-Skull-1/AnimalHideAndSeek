@@ -1,0 +1,13 @@
+name: AnimalHideAndSeek
+version: 2.2
+main: com.mighty.hideandseek.HideAndSeek
+api-version: 1.21
+softdepend: [LibsDisguises]
+commands:
+  camo:
+    description: Camouflage into an animal or reset!
+    default: true
+  hns:
+    description: Manage hide and seek teams and start the game
+    permission: hideandseek.admin
+    permission-message: §cYou do not have permission to run this setup command.
