@@ -24,12 +24,14 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -42,14 +44,27 @@ public class GameListener implements Listener {
     private final String camoGuiTitle = "§6§lChoose Your Camo!";
     private final Map<UUID, Long> compassCooldown = new HashMap<>();
     private final Map<UUID, Long> tauntCooldown = new HashMap<>();
+    private final Map<UUID, BukkitRunnable> sneakTimerTasks = new HashMap<>();
 
     public GameListener(HideAndSeek plugin) {
         this.plugin = plugin;
     }
 
+    // FEATURE: Enforce Lock Placement and Freeze Mechanics
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
+        if (plugin.isGameRunning() && plugin.getFrozenHiders().contains(player.getUniqueId())) {
+            // Cancel movement entirely but allow looking around smoothly
+            if (event.getFrom().getX() != event.getTo().getX() || event.getFrom().getZ() != event.getTo().getZ() || event.getFrom().getY() != event.getTo().getY()) {
+                org.bukkit.Location back = event.getFrom().clone();
+                back.setYaw(event.getTo().getYaw());
+                back.setPitch(event.getTo().getPitch());
+                event.setTo(back);
+            }
+            return;
+        }
+
         if (DisguiseAPI.isDisguised(player)) {
             if (event.getFrom().getX() == event.getTo().getX() && event.getFrom().getZ() == event.getTo().getZ()) {
                 player.setVelocity(new org.bukkit.util.Vector(0, player.getVelocity().getY(), 0));
@@ -57,11 +72,53 @@ public class GameListener implements Listener {
         }
     }
 
+    // FEATURE: 2-Second Sneak Activation System
+    @EventHandler
+    public void onToggleSneak(PlayerToggleSneakEvent event) {
+        Player player = event.getPlayer();
+        if (!plugin.isGameRunning() || !plugin.getHiders().contains(player.getUniqueId())) return;
+
+        if (event.isSneaking()) {
+            // Start counting 2 seconds (40 ticks)
+            BukkitRunnable task = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    if (player.isOnline() && player.isSneaking()) {
+                        if (plugin.getFrozenHiders().contains(player.getUniqueId())) {
+                            // Unfreeze
+                            plugin.getFrozenHiders().remove(player.getUniqueId());
+                            player.sendTitle("§a§lUNFROZEN", "§7You can now run and slide!", 5, 20, 5);
+                            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_CHIME, 1.0f, 1.5f);
+                        } else {
+                            // Freeze
+                            plugin.getFrozenHiders().add(player.getUniqueId());
+                            player.sendTitle("§c§lFROZEN IN PLACE", "§7Sneak for 2s to unlock movement!", 5, 20, 5);
+                            player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_PLACE, 0.5f, 2.0f);
+                        }
+                    }
+                }
+            };
+            sneakTimerTasks.put(player.getUniqueId(), task);
+            task.runTaskLater(plugin, 40L); // 40 ticks = 2 seconds
+        } else {
+            // Player stopped sneaking early, cancel task execution
+            if (sneakTimerTasks.containsKey(player.getUniqueId())) {
+                sneakTimerTasks.get(player.getUniqueId()).cancel();
+                sneakTimerTasks.remove(player.getUniqueId());
+            }
+        }
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        if (sneakTimerTasks.containsKey(player.getUniqueId())) {
+            sneakTimerTasks.get(player.getUniqueId()).cancel();
+            sneakTimerTasks.remove(player.getUniqueId());
+        }
         if (plugin.isGameRunning() && plugin.getHiders().contains(player.getUniqueId())) {
             plugin.getHiders().remove(player.getUniqueId());
+            plugin.getFrozenHiders().remove(player.getUniqueId());
             plugin.getDisconnectedHiders().add(player.getUniqueId()); 
             plugin.updateScoreboardDisplay();
         }
@@ -88,12 +145,10 @@ public class GameListener implements Listener {
         }
     }
 
-    // FEATURE: Seeker Respawn Tracker Preservation
     @EventHandler
     public void onSeekerRespawn(PlayerRespawnEvent event) {
         Player seeker = event.getPlayer();
         if (plugin.isGameRunning() && plugin.getSeekers().contains(seeker.getUniqueId())) {
-            // Re-give tracking item upon running a map respawn
             plugin.giveTrackerCompass(seeker);
             seeker.setGlowing(true);
         }
@@ -212,7 +267,6 @@ public class GameListener implements Listener {
                     if (!plugin.getSeekers().contains(seeker.getUniqueId())) return;
 
                     long now = System.currentTimeMillis();
-                    // FEATURE: Drop scanner limit dynamically to 10s during the final minute (60 seconds left)
                     int dynamicCompassLimit = (plugin.getTimeLeft() <= 60) ? 10 : 45;
 
                     if (compassCooldown.containsKey(seeker.getUniqueId())) {
@@ -318,8 +372,6 @@ public class GameListener implements Listener {
             Bukkit.broadcastMessage("§6§l[TAUNT] " + player.getName() + " triggered a noisy alert nearby!");
             
             tauntCooldown.put(player.getUniqueId(), System.currentTimeMillis());
-            // Log taunt event execution timestamp to prove compliance to the system
-            plugin.getLastTauntTime().put(player.getUniqueId(), System.currentTimeMillis());
             player.closeInventory();
         }
     }
@@ -360,7 +412,6 @@ public class GameListener implements Listener {
         if (plugin.getHiders().contains(player.getUniqueId())) {
             eliminateHider(player, "died during the hunt!");
         }
-        // Save seeker compass from drop cleanup
         if (plugin.getSeekers().contains(player.getUniqueId())) {
             event.getDrops().removeIf(item -> item.getType() == Material.COMPASS && item.hasItemMeta() && item.getItemMeta().getDisplayName().equals("§c§lSEEKER TRACKER"));
         }
@@ -374,6 +425,7 @@ public class GameListener implements Listener {
         player.getInventory().clear(); 
         player.removePotionEffect(PotionEffectType.SATURATION); 
         plugin.getHiders().remove(player.getUniqueId());
+        plugin.getFrozenHiders().remove(player.getUniqueId()); // Make sure to clean up freeze map profiles
         plugin.getHidersTeam().removeEntry(player.getName());
         player.setGameMode(GameMode.SPECTATOR);
         player.getWorld().playSound(player.getLocation(), Sound.ENTITY_LIGHTNING_BOLT_THUNDER, 1.0f, 1.0f);
