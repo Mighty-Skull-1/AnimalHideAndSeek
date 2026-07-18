@@ -7,7 +7,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.Inventory; // Fixed: Missing import added
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -23,6 +23,7 @@ public class HideAndSeek extends JavaPlugin {
     private final Set<UUID> hiders = new HashSet<>();
     private final Set<UUID> seekers = new HashSet<>();
     private final Set<UUID> lockedCamoHiders = new HashSet<>(); 
+    private final Set<UUID> disconnectedHiders = new HashSet<>(); // FIXED: Tracks hiders who disconnected mid-round
     
     private Scoreboard gameBoard;
     private Team hidersTeam;
@@ -51,7 +52,7 @@ public class HideAndSeek extends JavaPlugin {
         
         getServer().getPluginManager().registerEvents(new GameListener(this), this);
         
-        getLogger().info("Animal Hide and Seek Final Version has been enabled!");
+        getLogger().info("Animal Hide and Seek v2.2-fix enabled!");
     }
 
     @Override
@@ -113,6 +114,7 @@ public class HideAndSeek extends JavaPlugin {
         hiders.clear();
         seekers.clear();
         lockedCamoHiders.clear();
+        disconnectedHiders.clear(); // Clear disconnected tracking
         hidersTeam.getEntries().forEach(hidersTeam::removeEntry);
         seekersTeam.getEntries().forEach(seekersTeam::removeEntry);
 
@@ -124,6 +126,7 @@ public class HideAndSeek extends JavaPlugin {
             p.setScoreboard(gameBoard);
             p.setGameMode(GameMode.SURVIVAL);
             p.getInventory().clear(); 
+            p.teleport(startLocation);
 
             p.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION, Integer.MAX_VALUE, 0, true, false, false));
 
@@ -167,7 +170,8 @@ public class HideAndSeek extends JavaPlugin {
                     return;
                 }
                 
-                if (hiders.isEmpty()) {
+                // FIXED: Include disconnected hiders in count check so game doesn't instantly end if a hider drops link
+                if (hiders.isEmpty() && disconnectedHiders.isEmpty()) {
                     Bukkit.broadcastMessage("§c§lAll Hiders caught! SEEKERS WIN THE MATCH!");
                     stopGame();
                     cancel();
@@ -340,6 +344,7 @@ public class HideAndSeek extends JavaPlugin {
         hiders.clear();
         seekers.clear();
         lockedCamoHiders.clear();
+        disconnectedHiders.clear(); // FIXED: Clear rejoin list when game resets
     }
 
     public boolean isGameRunning() { return gameRunning; }
@@ -347,6 +352,7 @@ public class HideAndSeek extends JavaPlugin {
     public Set<UUID> getHiders() { return hiders; }
     public Set<UUID> getSeekers() { return seekers; }
     public Set<UUID> getLockedCamoHiders() { return lockedCamoHiders; }
+    public Set<UUID> getDisconnectedHiders() { return disconnectedHiders; }
     public Team getHidersTeam() { return hidersTeam; }
     public Team getSeekersTeam() { return seekersTeam; }
 }

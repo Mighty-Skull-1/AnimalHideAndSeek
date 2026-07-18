@@ -22,6 +22,7 @@ import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -55,12 +56,41 @@ public class GameListener implements Listener {
         }
     }
 
+    // FIXED: Handle when players leave mid-round
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        if (plugin.isGameRunning() && plugin.getHiders().contains(player.getUniqueId())) {
+            plugin.getHiders().remove(player.getUniqueId());
+            plugin.getDisconnectedHiders().add(player.getUniqueId()); // Hold their spot
+            Bukkit.broadcastMessage("§e§l[!] " + player.getName() + " disconnected! Holding their spot in the match...");
+        }
+    }
+
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         if (plugin.isGameRunning()) {
-            player.setGameMode(GameMode.SPECTATOR);
-            player.sendMessage("§e§l[!] §7A match is currently in progress. You have been put in Spectator mode to watch!");
+            // FIXED: If they were an active hider who disconnected, restore them
+            if (plugin.getDisconnectedHiders().contains(player.getUniqueId())) {
+                plugin.getDisconnectedHiders().remove(player.getUniqueId());
+                plugin.getHiders().add(player.getUniqueId());
+                plugin.getHidersTeam().addEntry(player.getName());
+                
+                player.setGameMode(GameMode.SURVIVAL);
+                player.setScoreboard(plugin.getHidersTeam().getScoreboard());
+                player.sendMessage("§a§l[!] You rejoined the match! Use your Taunt Menu or run to safety.");
+                
+                // Give back their clock menu item if they lost it on dc
+                if (!player.getInventory().contains(Material.CLOCK)) {
+                    plugin.giveTauntClock(player);
+                }
+                plugin.updateScoreboardDisplay();
+            } else {
+                // Actual mid-game joiner who wasn't playing drops to spectator
+                player.setGameMode(GameMode.SPECTATOR);
+                player.sendMessage("§e§l[!] A match is in progress. You are spectating!");
+            }
         } else {
             player.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION, Integer.MAX_VALUE, 0, true, false, false));
         }
@@ -109,7 +139,6 @@ public class GameListener implements Listener {
         if (disguiseType != null) {
             MobDisguise disguise = new MobDisguise(disguiseType);
             
-            // FEATURE: Strict self-disguise updates so client renders as the actual animal geometry
             disguise.setViewSelfDisguise(true);
             disguise.setHearSelfDisguise(true);
             disguise.setSelfDisguiseVisible(true); 
