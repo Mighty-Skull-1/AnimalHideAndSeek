@@ -28,45 +28,36 @@ public class TeamCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length < 1) {
-            sender.sendMessage("§cUsage: /hns <start|stop|clear|hider|seeker>");
+            sender.sendMessage("§cUsage: /hns <start|test|stop|clear|hider|seeker>");
             return true;
         }
 
         String sub = args[0].toLowerCase();
 
         if (sub.equals("start")) {
-            if (!(sender instanceof Player)) {
-                sender.sendMessage("Only players can execute start in game to map positions!");
-                return true;
-            }
-            Player host = (Player) sender;
-            plugin.startGame(host.getLocation());
-            Bukkit.broadcastMessage("§6[H&S] The Hide and Seek match has started!");
+            if (!(sender instanceof Player)) return true;
+            plugin.startGame(((Player) sender).getLocation(), false);
+            Bukkit.broadcastMessage("§6[H&S] Match launched successfully!");
             return true;
         }
 
-        if (sub.equals("stop")) {
+        // FEATURE: Solitary Test framework activation hook
+        if (sub.equals("test")) {
+            if (!(sender instanceof Player)) return true;
+            plugin.startGame(((Player) sender).getLocation(), true);
+            sender.sendMessage("§a[H&S] Launched Solo Test Mode! Morphing active in 10 seconds.");
+            return true;
+        }
+
+        if (sub.equals("stop") || sub.equals("clear")) {
             plugin.stopGame();
-            Bukkit.broadcastMessage("§6[H&S] The Hide and Seek match was stopped.");
+            Bukkit.broadcastMessage("§6[H&S] Match terminated and variables cleared.");
             return true;
         }
 
-        if (sub.equals("clear")) {
-            plugin.stopGame();
-            Bukkit.broadcastMessage("§a[H&S] Teams cleared.");
-            return true;
-        }
-
-        if (args.length < 2) {
-            sender.sendMessage("§cUsage: /hns " + sub + " <player>");
-            return true;
-        }
-
+        if (args.length < 2) return true;
         Player target = Bukkit.getPlayer(args[1]);
-        if (target == null) {
-            sender.sendMessage("§cPlayer not found!");
-            return true;
-        }
+        if (target == null) return true;
 
         plugin.getHiders().remove(target.getUniqueId());
         plugin.getSeekers().remove(target.getUniqueId());
@@ -76,12 +67,10 @@ public class TeamCommand implements CommandExecutor, TabCompleter {
         if (sub.equals("hider")) {
             plugin.getHiders().add(target.getUniqueId());
             plugin.getHidersTeam().addEntry(target.getName());
-            target.sendMessage("§aYou have been put on the HIDERS team!");
         } else if (sub.equals("seeker")) {
             plugin.getSeekers().add(target.getUniqueId());
             plugin.getSeekersTeam().addEntry(target.getName());
             target.setGlowing(true);
-            target.sendMessage("§cYou have been put on the SEEKERS team!");
         }
 
         return true;
@@ -90,13 +79,7 @@ public class TeamCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return StringUtil.copyPartialMatches(args[0], Arrays.asList("start", "stop", "clear", "hider", "seeker"), new ArrayList<>());
-        } else if (args.length == 2 && (args[0].equalsIgnoreCase("hider") || args[0].equalsIgnoreCase("seeker"))) {
-            List<String> playerNames = new ArrayList<>();
-            for (Player player : Bukkit.getOnlinePlayers()) {
-                playerNames.add(player.getName());
-            }
-            return StringUtil.copyPartialMatches(args[1], playerNames, new ArrayList<>());
+            return StringUtil.copyPartialMatches(args[0], Arrays.asList("start", "test", "stop", "clear", "hider", "seeker"), new ArrayList<>());
         }
         return new ArrayList<>();
     }

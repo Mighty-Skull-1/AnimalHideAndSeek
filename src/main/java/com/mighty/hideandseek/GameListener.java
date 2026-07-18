@@ -24,6 +24,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -56,14 +57,13 @@ public class GameListener implements Listener {
         }
     }
 
-    // FIXED: Handle when players leave mid-round
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         if (plugin.isGameRunning() && plugin.getHiders().contains(player.getUniqueId())) {
             plugin.getHiders().remove(player.getUniqueId());
-            plugin.getDisconnectedHiders().add(player.getUniqueId()); // Hold their spot
-            Bukkit.broadcastMessage("§e§l[!] " + player.getName() + " disconnected! Holding their spot in the match...");
+            plugin.getDisconnectedHiders().add(player.getUniqueId()); 
+            plugin.updateScoreboardDisplay();
         }
     }
 
@@ -71,28 +71,31 @@ public class GameListener implements Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         if (plugin.isGameRunning()) {
-            // FIXED: If they were an active hider who disconnected, restore them
             if (plugin.getDisconnectedHiders().contains(player.getUniqueId())) {
                 plugin.getDisconnectedHiders().remove(player.getUniqueId());
                 plugin.getHiders().add(player.getUniqueId());
                 plugin.getHidersTeam().addEntry(player.getName());
-                
                 player.setGameMode(GameMode.SURVIVAL);
-                player.setScoreboard(plugin.getHidersTeam().getScoreboard());
-                player.sendMessage("§a§l[!] You rejoined the match! Use your Taunt Menu or run to safety.");
-                
-                // Give back their clock menu item if they lost it on dc
                 if (!player.getInventory().contains(Material.CLOCK)) {
                     plugin.giveTauntClock(player);
                 }
                 plugin.updateScoreboardDisplay();
             } else {
-                // Actual mid-game joiner who wasn't playing drops to spectator
                 player.setGameMode(GameMode.SPECTATOR);
-                player.sendMessage("§e§l[!] A match is in progress. You are spectating!");
             }
         } else {
             player.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION, Integer.MAX_VALUE, 0, true, false, false));
+        }
+    }
+
+    // FEATURE: Seeker Respawn Tracker Preservation
+    @EventHandler
+    public void onSeekerRespawn(PlayerRespawnEvent event) {
+        Player seeker = event.getPlayer();
+        if (plugin.isGameRunning() && plugin.getSeekers().contains(seeker.getUniqueId())) {
+            // Re-give tracking item upon running a map respawn
+            plugin.giveTrackerCompass(seeker);
+            seeker.setGlowing(true);
         }
     }
 
@@ -100,7 +103,6 @@ public class GameListener implements Listener {
     public void onCamoGuiClose(InventoryCloseEvent event) {
         if (!event.getView().getTitle().equals(camoGuiTitle)) return;
         Player player = (Player) event.getPlayer();
-        
         if (plugin.isGameRunning() && plugin.getHiders().contains(player.getUniqueId())) {
             if (!plugin.getLockedCamoHiders().contains(player.getUniqueId())) {
                 Bukkit.getScheduler().runTask(plugin, () -> plugin.openCamoSelectionGUI(player));
@@ -112,12 +114,10 @@ public class GameListener implements Listener {
     public void onCamoGuiClick(InventoryClickEvent event) {
         if (!event.getView().getTitle().equals(camoGuiTitle)) return;
         event.setCancelled(true);
-
         if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
 
         Player player = (Player) event.getWhoClicked();
         String displayName = event.getCurrentItem().getItemMeta().getDisplayName();
-        
         DisguiseType disguiseType = null;
         
         if (displayName.equals("§aPig Camo")) disguiseType = DisguiseType.PIG;
@@ -138,10 +138,9 @@ public class GameListener implements Listener {
 
         if (disguiseType != null) {
             MobDisguise disguise = new MobDisguise(disguiseType);
-            
             disguise.setViewSelfDisguise(true);
             disguise.setHearSelfDisguise(true);
-            disguise.setSelfDisguiseVisible(true); 
+            disguise.setSelfDisguiseVisible(true);
             disguise.setModifyBoundingBox(true); 
 
             LivingWatcher watcher = disguise.getWatcher();
@@ -161,7 +160,6 @@ public class GameListener implements Listener {
             applyMobPhysics(player, disguiseType);
             
             plugin.getLockedCamoHiders().add(player.getUniqueId());
-            player.sendMessage("§aYou selected: " + displayName + "! Your choice is locked.");
             player.closeInventory();
         }
     }
@@ -202,40 +200,6 @@ public class GameListener implements Listener {
     }
 
     @EventHandler
-    public void onHiderHit(EntityDamageByEntityEvent event) {
-        if (event.getDamager() instanceof Player && event.getEntity() instanceof Player) {
-            Player seeker = (Player) event.getDamager();
-            Player hider = (Player) event.getEntity();
-
-            if (plugin.getSeekers().contains(seeker.getUniqueId()) && plugin.getHiders().contains(hider.getUniqueId())) {
-                if (DisguiseAPI.isDisguised(hider)) {
-                    DisguiseAPI.undisguiseToAll(hider);
-                    eliminateHider(hider, "was found by Seeker " + seeker.getName());
-                }
-            } else if (plugin.getHiders().contains(seeker.getUniqueId()) && plugin.getHiders().contains(hider.getUniqueId())) {
-                event.setCancelled(true);
-            }
-        }
-    }
-
-    @EventHandler
-    public void onSpectatorChat(AsyncPlayerChatEvent event) {
-        Player chatter = event.getPlayer();
-        if (chatter.getGameMode() == GameMode.SPECTATOR) {
-            event.setCancelled(true); 
-            
-            String formattedMessage = "§7[SPEC] " + chatter.getName() + ": " + event.getMessage();
-            chatter.sendMessage(formattedMessage);
-            
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                if (p.getGameMode() == GameMode.SPECTATOR) {
-                    p.sendMessage(formattedMessage);
-                }
-            }
-        }
-    }
-
-    @EventHandler
     public void onCompassInteract(PlayerInteractEvent event) {
         Player seeker = event.getPlayer();
         ItemStack item = event.getItem();
@@ -245,14 +209,15 @@ public class GameListener implements Listener {
                 if (event.getAction() == Action.RIGHT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_BLOCK) {
                     event.setCancelled(true);
 
-                    if (!plugin.getSeekers().contains(seeker.getUniqueId())) {
-                        return;
-                    }
+                    if (!plugin.getSeekers().contains(seeker.getUniqueId())) return;
 
                     long now = System.currentTimeMillis();
+                    // FEATURE: Drop scanner limit dynamically to 10s during the final minute (60 seconds left)
+                    int dynamicCompassLimit = (plugin.getTimeLeft() <= 60) ? 10 : 45;
+
                     if (compassCooldown.containsKey(seeker.getUniqueId())) {
                         long lastUse = compassCooldown.get(seeker.getUniqueId());
-                        long secondsLeft = 45 - ((now - lastUse) / 1000);
+                        long secondsLeft = dynamicCompassLimit - ((now - lastUse) / 1000);
                         if (secondsLeft > 0) {
                             seeker.sendMessage("§cYour tracker is on cooldown for " + secondsLeft + "s!");
                             return;
@@ -304,11 +269,9 @@ public class GameListener implements Listener {
                         long secondsLeft = dynamicLimit - ((now - lastUse) / 1000);
                         if (secondsLeft > 0) {
                             player.sendMessage("§cTaunt is on cooldown! Wait " + secondsLeft + "s.");
-                            player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                             return;
                         }
                     }
-
                     openTauntGUI(player);
                 }
             }
@@ -339,7 +302,6 @@ public class GameListener implements Listener {
     public void onGuiClick(InventoryClickEvent event) {
         if (!event.getView().getTitle().equals(tauntGuiTitle)) return;
         event.setCancelled(true); 
-
         if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
 
         Player player = (Player) event.getWhoClicked();
@@ -356,7 +318,39 @@ public class GameListener implements Listener {
             Bukkit.broadcastMessage("§6§l[TAUNT] " + player.getName() + " triggered a noisy alert nearby!");
             
             tauntCooldown.put(player.getUniqueId(), System.currentTimeMillis());
+            // Log taunt event execution timestamp to prove compliance to the system
+            plugin.getLastTauntTime().put(player.getUniqueId(), System.currentTimeMillis());
             player.closeInventory();
+        }
+    }
+
+    @EventHandler
+    public void onHiderHit(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Player && event.getEntity() instanceof Player) {
+            Player seeker = (Player) event.getDamager();
+            Player hider = (Player) event.getEntity();
+
+            if (plugin.getSeekers().contains(seeker.getUniqueId()) && plugin.getHiders().contains(hider.getUniqueId())) {
+                if (DisguiseAPI.isDisguised(hider)) {
+                    DisguiseAPI.undisguiseToAll(hider);
+                    eliminateHider(hider, "was found by Seeker " + seeker.getName());
+                }
+            } else if (plugin.getHiders().contains(seeker.getUniqueId()) && plugin.getHiders().contains(hider.getUniqueId())) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @EventHandler
+    public void onSpectatorChat(AsyncPlayerChatEvent event) {
+        Player chatter = event.getPlayer();
+        if (chatter.getGameMode() == GameMode.SPECTATOR) {
+            event.setCancelled(true); 
+            String formattedMessage = "§7[SPEC] " + chatter.getName() + ": " + event.getMessage();
+            chatter.sendMessage(formattedMessage);
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.getGameMode() == GameMode.SPECTATOR) p.sendMessage(formattedMessage);
+            }
         }
     }
 
@@ -365,6 +359,10 @@ public class GameListener implements Listener {
         Player player = event.getEntity();
         if (plugin.getHiders().contains(player.getUniqueId())) {
             eliminateHider(player, "died during the hunt!");
+        }
+        // Save seeker compass from drop cleanup
+        if (plugin.getSeekers().contains(player.getUniqueId())) {
+            event.getDrops().removeIf(item -> item.getType() == Material.COMPASS && item.hasItemMeta() && item.getItemMeta().getDisplayName().equals("§c§lSEEKER TRACKER"));
         }
     }
 

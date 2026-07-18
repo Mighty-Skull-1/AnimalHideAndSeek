@@ -23,7 +23,8 @@ public class HideAndSeek extends JavaPlugin {
     private final Set<UUID> hiders = new HashSet<>();
     private final Set<UUID> seekers = new HashSet<>();
     private final Set<UUID> lockedCamoHiders = new HashSet<>(); 
-    private final Set<UUID> disconnectedHiders = new HashSet<>(); // FIXED: Tracks hiders who disconnected mid-round
+    private final Set<UUID> disconnectedHiders = new HashSet<>(); 
+    private final Map<UUID, Long> lastTauntTime = new HashMap<>(); // Track physical taunt compliance
     
     private Scoreboard gameBoard;
     private Team hidersTeam;
@@ -33,10 +34,12 @@ public class HideAndSeek extends JavaPlugin {
     private int timeLeft = 300; 
     private BukkitRunnable gameTimerTask;
     private boolean gameRunning = false;
+    private boolean isTestMode = false;
     private Location startLocation;
     private Location cageLocation; 
     private boolean seekersReleased = false;
     private boolean lateGameBuffsApplied = false;
+    private boolean windChargesGiven = false;
 
     @Override
     public void onEnable() {
@@ -52,7 +55,7 @@ public class HideAndSeek extends JavaPlugin {
         
         getServer().getPluginManager().registerEvents(new GameListener(this), this);
         
-        getLogger().info("Animal Hide and Seek v2.2-fix enabled!");
+        getLogger().info("Animal Hide and Seek v2.3-production enabled!");
     }
 
     @Override
@@ -86,7 +89,7 @@ public class HideAndSeek extends JavaPlugin {
         String formattedTime = String.format("%02d:%02d", minutes, seconds);
 
         objective.getScore("§7----------------").setScore(6);
-        if (!seekersReleased) {
+        if (!seekersReleased && !isTestMode) {
             objective.getScore("§eRelease In: §c" + (timeLeft - 270) + "s").setScore(5);
         } else {
             objective.getScore("§eTime Left: §b" + formattedTime).setScore(5);
@@ -97,16 +100,15 @@ public class HideAndSeek extends JavaPlugin {
         objective.getScore("§7---------------- ").setScore(1);
     }
 
-    public void startGame(Location hostLocation) {
+    public void startGame(Location hostLocation, boolean testMode) {
         if (gameRunning) return;
         gameRunning = true;
+        this.isTestMode = testMode;
         timeLeft = 300; 
-        seekersReleased = false;
+        seekersReleased = testMode; // Skip cage delay if testing solo
         lateGameBuffsApplied = false;
+        windChargesGiven = false;
         this.startLocation = hostLocation.clone();
-
-        this.cageLocation = new Location(hostLocation.getWorld(), hostLocation.getX(), 250, hostLocation.getZ());
-        buildSkyBox(cageLocation);
 
         List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
         if (players.isEmpty()) return;
@@ -114,55 +116,82 @@ public class HideAndSeek extends JavaPlugin {
         hiders.clear();
         seekers.clear();
         lockedCamoHiders.clear();
-        disconnectedHiders.clear(); // Clear disconnected tracking
+        disconnectedHiders.clear();
+        lastTauntTime.clear();
         hidersTeam.getEntries().forEach(hidersTeam::removeEntry);
         seekersTeam.getEntries().forEach(seekersTeam::removeEntry);
 
-        Collections.shuffle(players);
-        int seekerCount = (players.size() >= 8) ? 2 : 1;
-
-        for (int i = 0; i < players.size(); i++) {
-            Player p = players.get(i);
-            p.setScoreboard(gameBoard);
-            p.setGameMode(GameMode.SURVIVAL);
-            p.getInventory().clear(); 
-            p.teleport(startLocation);
-
-            p.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION, Integer.MAX_VALUE, 0, true, false, false));
-
-            if (i < seekerCount) {
-                seekers.add(p.getUniqueId());
-                seekersTeam.addEntry(p.getName());
-                p.setGlowing(true);
-                
-                p.teleport(cageLocation.clone().add(0, 1, 0));
-                p.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 600, 1, true, false, false));
-                p.sendTitle("§c§lCRAFTING CAGE", "§7Hiders are running! 10s headstart.", 10, 40, 10);
-                
-                giveTrackerCompass(p);
-            } else {
-                hiders.add(p.getUniqueId());
-                hidersTeam.addEntry(p.getName());
-                p.setGlowing(false);
-                p.teleport(startLocation);
-                p.sendTitle("§a§lRUN AWAY!", "§eYou have 10 seconds to find a spot!", 10, 40, 10);
+        if (isTestMode) {
+            // Solitary Test Mode: Force host onto Hiders team to inspect parameters safely
+            Player host = Bukkit.getPlayer(players.get(0).getUniqueId());
+            if (host != null) {
+                hiders.add(host.getUniqueId());
+                hidersTeam.addEntry(host.getName());
+                host.setScoreboard(gameBoard);
+                host.setGameMode(GameMode.SURVIVAL);
+                host.getInventory().clear();
+                host.teleport(startLocation);
+                lastTauntTime.put(host.getUniqueId(), System.currentTimeMillis() + 10000L); // 10s grace
                 
                 new BukkitRunnable() {
                     @Override
                     public void run() {
-                        if (gameRunning && hiders.contains(p.getUniqueId())) {
-                            p.sendTitle("§6§lCHOOSE NOW!", "§7Select your disguise model!", 5, 20, 5);
-                            openCamoSelectionGUI(p);
-                            giveTauntClock(p);
+                        if (gameRunning && hiders.contains(host.getUniqueId())) {
+                            openCamoSelectionGUI(host);
+                            giveTauntClock(host);
                         }
                     }
-                }.runTaskLater(this, 200L); 
+                }.runTaskLater(this, 200L);
+            }
+        } else {
+            // Regular Production Match Setup
+            this.cageLocation = new Location(hostLocation.getWorld(), hostLocation.getX(), 250, hostLocation.getZ());
+            buildSkyBox(cageLocation);
+            Collections.shuffle(players);
+            int seekerCount = (players.size() >= 8) ? 2 : 1;
+
+            for (int i = 0; i < players.size(); i++) {
+                Player p = players.get(i);
+                p.setScoreboard(gameBoard);
+                p.setGameMode(GameMode.SURVIVAL);
+                p.getInventory().clear(); 
+
+                p.addPotionEffect(new PotionEffect(PotionEffectType.SATURATION, Integer.MAX_VALUE, 0, true, false, false));
+
+                if (i < seekerCount) {
+                    seekers.add(p.getUniqueId());
+                    seekersTeam.addEntry(p.getName());
+                    p.setGlowing(true);
+                    p.teleport(cageLocation.clone().add(0, 1, 0));
+                    p.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 600, 1, true, false, false));
+                    p.sendTitle("§c§lCRAFTING CAGE", "§7Hiders are running! 10s headstart.", 10, 40, 10);
+                    giveTrackerCompass(p);
+                } else {
+                    hiders.add(p.getUniqueId());
+                    hidersTeam.addEntry(p.getName());
+                    p.setGlowing(false);
+                    p.teleport(startLocation);
+                    p.sendTitle("§a§lRUN AWAY!", "§eYou have 10 seconds to find a spot!", 10, 40, 10);
+                    lastTauntTime.put(p.getUniqueId(), System.currentTimeMillis() + 10000L); 
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            if (gameRunning && hiders.contains(p.getUniqueId())) {
+                                openCamoSelectionGUI(p);
+                                giveTauntClock(p);
+                            }
+                        }
+                    }.runTaskLater(this, 200L); 
+                }
             }
         }
 
         gameTimerTask = new BukkitRunnable() {
             @Override
             public void run() {
+                long currentTime = System.currentTimeMillis();
+
                 if (timeLeft <= 0) {
                     Bukkit.broadcastMessage("§a§l[!] Time is up! HIDERS WIN THE MATCH!");
                     stopGame();
@@ -170,7 +199,6 @@ public class HideAndSeek extends JavaPlugin {
                     return;
                 }
                 
-                // FIXED: Include disconnected hiders in count check so game doesn't instantly end if a hider drops link
                 if (hiders.isEmpty() && disconnectedHiders.isEmpty()) {
                     Bukkit.broadcastMessage("§c§lAll Hiders caught! SEEKERS WIN THE MATCH!");
                     stopGame();
@@ -178,22 +206,20 @@ public class HideAndSeek extends JavaPlugin {
                     return;
                 }
 
-                if (!seekersReleased) {
+                // Cage hold bounds
+                if (!seekersReleased && !isTestMode) {
                     for (UUID uuid : seekers) {
                         Player seeker = Bukkit.getPlayer(uuid);
-                        if (seeker != null) {
-                            Location current = seeker.getLocation();
-                            if (current.getY() < 249) {
-                                seeker.teleport(cageLocation.clone().add(0, 1, 0));
-                            }
+                        if (seeker != null && seeker.getLocation().getY() < 249) {
+                            seeker.teleport(cageLocation.clone().add(0, 1, 0));
                         }
                     }
                 }
 
-                if (timeLeft == 270 && !seekersReleased) {
+                // Release seekers from sky box
+                if (timeLeft == 270 && !seekersReleased && !isTestMode) {
                     seekersReleased = true;
                     removeSkyBox(cageLocation); 
-                    
                     for (UUID uuid : seekers) {
                         Player seeker = Bukkit.getPlayer(uuid);
                         if (seeker != null) {
@@ -205,10 +231,50 @@ public class HideAndSeek extends JavaPlugin {
                     Bukkit.broadcastMessage("§c§l[!] SEEKERS HAVE BEEN RELEASED FROM THE SKY BOX!");
                 }
 
+                // 30-Second Force Taunt Enforcement Loop
+                if (timeLeft % 30 == 0 && timeLeft < 300) {
+                    for (UUID uuid : hiders) {
+                        Player p = Bukkit.getPlayer(uuid);
+                        if (p != null) {
+                            p.sendTitle("§6§lTAUNT MANDATORY!", "§eOpen menu or suffer audio explosion tracking!", 5, 40, 5);
+                        }
+                    }
+                }
+
+                // Enforce compliance 5 seconds after the cycle marker checks out
+                if ((timeLeft - 25) % 30 == 0 && timeLeft < 295) {
+                    for (UUID uuid : hiders) {
+                        Player p = Bukkit.getPlayer(uuid);
+                        if (p != null && lastTauntTime.containsKey(uuid)) {
+                            long lastUsed = lastTauntTime.get(uuid);
+                            // If they haven't used a taunt noise in the last 15 seconds, trigger a forced explosion
+                            if ((currentTime - lastUsed) > 15000L) {
+                                p.getWorld().playSound(p.getLocation(), org.bukkit.Sound.ENTITY_GENERIC_EXPLODE, 4.0f, 0.5f);
+                                p.getWorld().spawnParticle(org.bukkit.Particle.EXPLOSION_EMITTER, p.getLocation().add(0,1,0), 1);
+                                Bukkit.broadcastMessage("§c§l[⚠️] " + p.getName() + " failed to taunt! Forced tracking blast detonated!");
+                            }
+                        }
+                    }
+                }
+
+                // Late-Game Buffs & FEATURE: 5 Wind Charges in the Final Minute (60 seconds left)
+                if (timeLeft == 60 && !windChargesGiven) {
+                    windChargesGiven = true;
+                    Bukkit.broadcastMessage("§c§l[!] 1 MINUTE LEFT! SEEKERS RECEIVED 5 WIND CHARGES!");
+                    
+                    ItemStack windCharges = new ItemStack(Material.WIND_CHARGE, 5);
+                    for (UUID uuid : seekers) {
+                        Player seeker = Bukkit.getPlayer(uuid);
+                        if (seeker != null) {
+                            seeker.getInventory().addItem(windCharges);
+                            seeker.playSound(seeker.getLocation(), org.bukkit.Sound.ENTITY_WIND_CHARGE_THROW, 1.0f, 1.0f);
+                            seeker.sendTitle("§c§lWIND CHARGES ACTIVE!", "§eBlast up to high structures!", 10, 40, 10);
+                        }
+                    }
+                }
+
                 if (timeLeft == 90 && !lateGameBuffsApplied) {
                     lateGameBuffsApplied = true;
-                    Bukkit.broadcastMessage("§c§l[!] 90 SECONDS LEFT! SEEKERS HAVE BEEN BUFFED!");
-                    
                     ItemStack knockbackStick = new ItemStack(Material.WOODEN_SWORD, 1);
                     ItemMeta meta = knockbackStick.getItemMeta();
                     if (meta != null) {
@@ -216,7 +282,6 @@ public class HideAndSeek extends JavaPlugin {
                         meta.addEnchant(Enchantment.KNOCKBACK, 1, true);
                         knockbackStick.setItemMeta(meta);
                     }
-
                     for (UUID uuid : seekers) {
                         Player seeker = Bukkit.getPlayer(uuid);
                         if (seeker != null) {
@@ -305,7 +370,7 @@ public class HideAndSeek extends JavaPlugin {
         p.getInventory().addItem(clock);
     }
 
-    private void giveTrackerCompass(Player p) {
+    public void giveTrackerCompass(Player p) {
         ItemStack compass = new ItemStack(Material.COMPASS, 1);
         ItemMeta meta = compass.getItemMeta();
         if (meta != null) {
@@ -318,6 +383,7 @@ public class HideAndSeek extends JavaPlugin {
 
     public void stopGame() {
         gameRunning = false;
+        isTestMode = false;
         if (gameTimerTask != null) {
             gameTimerTask.cancel();
         }
@@ -344,7 +410,8 @@ public class HideAndSeek extends JavaPlugin {
         hiders.clear();
         seekers.clear();
         lockedCamoHiders.clear();
-        disconnectedHiders.clear(); // FIXED: Clear rejoin list when game resets
+        disconnectedHiders.clear();
+        lastTauntTime.clear();
     }
 
     public boolean isGameRunning() { return gameRunning; }
@@ -353,6 +420,7 @@ public class HideAndSeek extends JavaPlugin {
     public Set<UUID> getSeekers() { return seekers; }
     public Set<UUID> getLockedCamoHiders() { return lockedCamoHiders; }
     public Set<UUID> getDisconnectedHiders() { return disconnectedHiders; }
+    public Map<UUID, Long> getLastTauntTime() { return lastTauntTime; }
     public Team getHidersTeam() { return hidersTeam; }
     public Team getSeekersTeam() { return seekersTeam; }
 }
