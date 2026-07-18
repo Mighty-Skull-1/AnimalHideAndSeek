@@ -1,5 +1,5 @@
 name: AnimalHideAndSeek
-version: 2.2
+version: 2.3
 main: com.mighty.hideandseek.HideAndSeek
 api-version: 1.21
 softdepend: [LibsDisguises]
