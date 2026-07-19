@@ -22,17 +22,26 @@ public class TeamCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!sender.hasPermission("hideandseek.admin")) {
-            sender.sendMessage("§cYou do not have permission to use this command!");
-            return true;
-        }
-
         if (args.length < 1) {
-            sender.sendMessage("§cUsage: /hns <start|test|stop|clear|hider|seeker>");
+            sender.sendMessage("§cUsage: /hns <start|test|stop|clear|hider|seeker|help>");
             return true;
         }
 
         String sub = args[0].toLowerCase();
+
+        // FEATURE: Allow all players to execute the manual helper command loop
+        if (sub.equals("help")) {
+            if (!(sender instanceof Player)) return true;
+            Player p = (Player) sender;
+            p.getInventory().addItem(plugin.getHelpBook());
+            p.sendMessage("§a[H&S] Custom rulebook dropped into your inventory!");
+            return true;
+        }
+
+        if (!sender.hasPermission("hideandseek.admin")) {
+            sender.sendMessage("§cYou do not have permission to use this admin command!");
+            return true;
+        }
 
         if (sub.equals("start")) {
             if (!(sender instanceof Player)) return true;
@@ -41,7 +50,6 @@ public class TeamCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // FEATURE: Solitary Test framework activation hook
         if (sub.equals("test")) {
             if (!(sender instanceof Player)) return true;
             plugin.startGame(((Player) sender).getLocation(), true);
@@ -79,7 +87,7 @@ public class TeamCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return StringUtil.copyPartialMatches(args[0], Arrays.asList("start", "test", "stop", "clear", "hider", "seeker"), new ArrayList<>());
+            return StringUtil.copyPartialMatches(args[0], Arrays.asList("start", "test", "stop", "clear", "hider", "seeker", "help"), new ArrayList<>());
         }
         return new ArrayList<>();
     }

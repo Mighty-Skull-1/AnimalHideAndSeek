@@ -9,6 +9,7 @@ import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
@@ -24,7 +25,7 @@ public class HideAndSeek extends JavaPlugin {
     private final Set<UUID> seekers = new HashSet<>();
     private final Set<UUID> lockedCamoHiders = new HashSet<>(); 
     private final Set<UUID> disconnectedHiders = new HashSet<>(); 
-    private final Set<UUID> frozenHiders = new HashSet<>(); // Tracks hiders who are locked in place
+    private final Set<UUID> frozenHiders = new HashSet<>(); 
     
     private Scoreboard gameBoard;
     private Team hidersTeam;
@@ -55,7 +56,7 @@ public class HideAndSeek extends JavaPlugin {
         
         getServer().getPluginManager().registerEvents(new GameListener(this), this);
         
-        getLogger().info("Animal Hide and Seek V11 Fixes Enabled!");
+        getLogger().info("Animal Hide and Seek V2.4 Enabled!");
     }
 
     @Override
@@ -130,6 +131,7 @@ public class HideAndSeek extends JavaPlugin {
                 host.setGameMode(GameMode.SURVIVAL);
                 host.getInventory().clear();
                 host.teleport(startLocation);
+                host.getInventory().addItem(getHelpBook()); // Give tutorial book
                 
                 new BukkitRunnable() {
                     @Override
@@ -169,6 +171,7 @@ public class HideAndSeek extends JavaPlugin {
                     p.setGlowing(false);
                     p.teleport(startLocation);
                     p.sendTitle("§a§lRUN AWAY!", "§eYou have 10 seconds to find a spot!", 10, 40, 10);
+                    p.getInventory().addItem(getHelpBook()); // Give tutorial book to hiders
 
                     new BukkitRunnable() {
                         @Override
@@ -231,7 +234,6 @@ public class HideAndSeek extends JavaPlugin {
                         Player seeker = Bukkit.getPlayer(uuid);
                         if (seeker != null) {
                             seeker.getInventory().addItem(windCharges);
-                            seeker.playSound(seeker.getLocation(), org.bukkit.Sound.ENTITY_WIND_CHARGE_THROW, 1.0f, 1.0f);
                         }
                     }
                 }
@@ -254,7 +256,6 @@ public class HideAndSeek extends JavaPlugin {
                     }
                 }
 
-                // Keep frozen players locked safely to prevent drift checks
                 for (UUID uuid : frozenHiders) {
                     Player p = Bukkit.getPlayer(uuid);
                     if (p != null) {
@@ -297,6 +298,32 @@ public class HideAndSeek extends JavaPlugin {
                 }
             }
         }
+    }
+
+    // FEATURE: Dynamic Tutorial Guide Book Generation
+    public ItemStack getHelpBook() {
+        ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta meta = (BookMeta) book.getItemMeta();
+        if (meta != null) {
+            meta.setTitle("§6§lHow to Play Guide");
+            meta.setAuthor("Mighty HNS");
+            meta.addPage(
+                "§0Welcome to §6§lAnimal Hide & Seek§0!\n\n" +
+                "§lHIDERS:§r You have 10 seconds to run away before choosing your mob disguise from the popup menu.\n\n" +
+                "§lSEEKERS:§r Trapped for 30s before release."
+            );
+            meta.addPage(
+                "§6§lADVANCED CONTROLS:\n\n" +
+                "§1• Freeze Mechanics:§0 Hold §lSHIFT (Sneak) for 2 seconds§r to freeze entirely in place and stop drifting. Hold SHIFT again for 2s to unlock movement."
+            );
+            meta.addPage(
+                "§6§lITEMS & UTILITY:\n\n" +
+                "§1• Clock:§0 Opens the Taunt GUI menu to make noise.\n\n" +
+                "§1• Seeker Compass:§0 Tracks the §lLAST KNOWN POSITION§r of the closest hider on a cooldown map."
+            );
+            book.setItemMeta(meta);
+        }
+        return book;
     }
 
     public void openCamoSelectionGUI(Player player) {
@@ -346,7 +373,7 @@ public class HideAndSeek extends JavaPlugin {
         ItemMeta meta = compass.getItemMeta();
         if (meta != null) {
             meta.setDisplayName("§c§lSEEKER TRACKER");
-            meta.setLore(Arrays.asList("§7Right-click to point compass", "§7to the nearest active Hider!", "§845s Cooldown"));
+            meta.setLore(Arrays.asList("§7Right-click to point compass", "§7to the last known location", "§7of the nearest active Hider!"));
             compass.setItemMeta(meta);
         }
         p.getInventory().addItem(compass);

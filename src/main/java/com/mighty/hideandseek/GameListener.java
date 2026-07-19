@@ -187,11 +187,12 @@ public class GameListener implements Listener {
         if (disguiseType != null) {
             MobDisguise disguise = new MobDisguise(disguiseType);
             
-            // UNDID CHANGES: Returned to self-disguise visual clone rendering variables
             disguise.setViewSelfDisguise(true);
             disguise.setHearSelfDisguise(true);
-            disguise.setSelfDisguiseVisible(true); // Restored original tracking view setup
             disguise.setModifyBoundingBox(true);   
+
+            // FEATURE: Allow players on the same scoreboard team to see each other's true player skins
+            disguise.setDisguiseVisibleToTeams(true); 
 
             LivingWatcher watcher = disguise.getWatcher();
             if (watcher != null) {
@@ -208,7 +209,6 @@ public class GameListener implements Listener {
 
             DisguiseAPI.disguiseToAll(player, disguise);
             applyMobPhysics(player, disguiseType);
-            // Health pool updates bypassed to retain standard 20.0 default profile
             
             plugin.getLockedCamoHiders().add(player.getUniqueId());
             player.closeInventory();
@@ -289,8 +289,11 @@ public class GameListener implements Listener {
                     }
 
                     if (nearestHider != null) {
-                        seeker.setCompassTarget(nearestHider.getLocation());
-                        seeker.sendMessage("§a§l[!] §eNearest hider tracked! (" + (int) nearestDistance + " blocks away)");
+                        // FEATURE: Snapshot the exact block position at the click moment (Last Known Location)
+                        org.bukkit.Location lastKnownLocation = nearestHider.getLocation().getBlock().getLocation();
+                        
+                        seeker.setCompassTarget(lastKnownLocation);
+                        seeker.sendMessage("§a§l[!] §eNearest hider's last known location tracked! (" + (int) nearestDistance + " blocks away)");
                         seeker.playSound(seeker.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 2.0f);
                         compassCooldown.put(seeker.getUniqueId(), now);
                     } else {
@@ -337,17 +340,6 @@ public class GameListener implements Listener {
         player.openInventory(gui);
     }
 
-    private ItemStack createGuiItem(Material mat, String name, String lore) {
-        ItemStack item = new ItemStack(mat);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(name);
-            meta.setLore(java.util.Arrays.asList(lore));
-            item.setItemMeta(meta);
-        }
-        return item;
-    }
-
     @EventHandler
     public void onGuiClick(InventoryClickEvent event) {
         if (!event.getView().getTitle().equals(tauntGuiTitle)) return;
@@ -366,7 +358,6 @@ public class GameListener implements Listener {
         if (soundToPlay != null) {
             player.getWorld().playSound(player.getLocation(), soundToPlay, 3.0f, 1.0f);
             Bukkit.broadcastMessage("§6§l[TAUNT] " + player.getName() + " triggered a noisy alert nearby!");
-            
             tauntCooldown.put(player.getUniqueId(), System.currentTimeMillis());
             player.closeInventory();
         }
@@ -418,11 +409,6 @@ public class GameListener implements Listener {
             DisguiseAPI.undisguiseToAll(player);
         }
         CamoCommand.clearMobPhysics(player);
-        
-        // Ensure standard attributes remain active upon dropping match profiles
-        org.bukkit.attribute.AttributeInstance attr = player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
-        if (attr != null) attr.setBaseValue(20.0);
-
         player.getInventory().clear(); 
         player.removePotionEffect(PotionEffectType.SATURATION); 
         plugin.getHiders().remove(player.getUniqueId());
