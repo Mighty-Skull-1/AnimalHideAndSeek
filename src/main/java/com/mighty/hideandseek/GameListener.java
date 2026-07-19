@@ -189,11 +189,10 @@ public class GameListener implements Listener {
         if (disguiseType != null) {
             MobDisguise disguise = new MobDisguise(disguiseType);
             
-            // FIXED: Enable view self but disable the human ghost double clone render mechanics
             disguise.setViewSelfDisguise(true);
             disguise.setHearSelfDisguise(true);
-            disguise.setSelfDisguiseVisible(false); // Eliminates human skin copy behind animal structure
-            disguise.setModifyBoundingBox(true);   // Forces standard volume scaling parameters natively
+            disguise.setSelfDisguiseVisible(false); 
+            disguise.setModifyBoundingBox(true);   
 
             LivingWatcher watcher = disguise.getWatcher();
             if (watcher != null) {
@@ -210,10 +209,9 @@ public class GameListener implements Listener {
 
             DisguiseAPI.disguiseToAll(player, disguise);
             applyMobPhysics(player, disguiseType);
-            applyMobHealth(player, disguiseType); // FEATURE: Blends health scale seamlessly
+            applyMobHealth(player, disguiseType); 
             
             plugin.getLockedCamoHiders().add(player.getUniqueId());
-            player.sendMessage("§aDisguise locked! Bounding boxes and health profiles mapped to " + disguiseType.name().toLowerCase() + ".");
             player.closeInventory();
         }
     }
@@ -253,42 +251,41 @@ public class GameListener implements Listener {
         }
     }
 
-    // FEATURE: Dynamic Health Profiler System
     private void applyMobHealth(Player player, DisguiseType type) {
-        double healthPool = 20.0; // Default human value
+        double healthPool = 20.0;
 
         switch (type) {
             case RABBIT:
             case BAT:
-                healthPool = 3.0; // 1.5 Hearts
+                healthPool = 3.0; 
                 break;
             case CHICKEN:
-                healthPool = 4.0; // 2 Hearts
+                healthPool = 4.0; 
                 break;
             case CAT:
-                healthPool = 10.0; // 5 Hearts
+                healthPool = 10.0; 
                 break;
             case FOX:
-                healthPool = 20.0; // 10 Hearts
+                healthPool = 20.0; 
                 break;
             case PIG:
-                healthPool = 10.0; // 5 Hearts
+                healthPool = 10.0; 
                 break;
             case COW:
             case SHEEP:
-                healthPool = 10.0; // 5 Hearts
+                healthPool = 10.0; 
                 break;
             case WOLF:
-                healthPool = 20.0; // 10 Hearts
+                healthPool = 20.0; 
                 break;
             case CREEPER:
                 healthPool = 20.0; 
                 break;
             case SPIDER:
-                healthPool = 16.0; // 8 Hearts
+                healthPool = 16.0; 
                 break;
             case IRON_GOLEM:
-                healthPool = 100.0; // 50 Hearts
+                healthPool = 100.0; 
                 break;
             default:
                 break;
@@ -297,7 +294,7 @@ public class GameListener implements Listener {
         AttributeInstance attr = player.getAttribute(Attribute.MAX_HEALTH);
         if (attr != null) {
             attr.setBaseValue(healthPool);
-            player.setHealth(healthPool); // Instantly synchronize active tracking metrics
+            player.setHealth(healthPool); 
         }
     }
 
@@ -418,8 +415,8 @@ public class GameListener implements Listener {
             player.getWorld().playSound(player.getLocation(), soundToPlay, 3.0f, 1.0f);
             Bukkit.broadcastMessage("§6§l[TAUNT] " + player.getName() + " triggered a noisy alert nearby!");
             
+            // FIXED: Removed the missing background tracking map call
             tauntCooldown.put(player.getUniqueId(), System.currentTimeMillis());
-            plugin.getLastTauntTime().put(player.getUniqueId(), System.currentTimeMillis());
             player.closeInventory();
         }
     }
@@ -471,7 +468,6 @@ public class GameListener implements Listener {
         }
         CamoCommand.clearMobPhysics(player);
         
-        // Reset player max health attribute back to standard human scale (20.0) upon elimination
         AttributeInstance attr = player.getAttribute(Attribute.MAX_HEALTH);
         if (attr != null) attr.setBaseValue(20.0);
 
