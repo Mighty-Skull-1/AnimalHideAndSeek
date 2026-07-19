@@ -33,6 +33,7 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -191,8 +192,8 @@ public class GameListener implements Listener {
             disguise.setHearSelfDisguise(true);
             disguise.setModifyBoundingBox(true);   
 
-            // FEATURE: Allow players on the same scoreboard team to see each other's true player skins
-            disguise.setDisguiseVisibleToTeams(true); 
+            // FIXED: Enable friendly invisibles display properties natively on the Hiders Team via scoreboard parameters
+            plugin.getHidersTeam().setSeeFriendlyInvisibles(true);
 
             LivingWatcher watcher = disguise.getWatcher();
             if (watcher != null) {
@@ -289,7 +290,6 @@ public class GameListener implements Listener {
                     }
 
                     if (nearestHider != null) {
-                        // FEATURE: Snapshot the exact block position at the click moment (Last Known Location)
                         org.bukkit.Location lastKnownLocation = nearestHider.getLocation().getBlock().getLocation();
                         
                         seeker.setCompassTarget(lastKnownLocation);
@@ -338,6 +338,18 @@ public class GameListener implements Listener {
         gui.setItem(5, createGuiItem(Material.ANVIL, "§7Anvil Drop", "§7Play a heavy metallic anvil smash!"));
         gui.setItem(7, createGuiItem(Material.ENDER_PEARL, "§bEnderman Distortion", "§7Play an eerie teleport distortion!"));
         player.openInventory(gui);
+    }
+
+    // FIXED: Added missing local helper item builder inside GameListener
+    private ItemStack createGuiItem(Material mat, String name, String lore) {
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(name);
+            meta.setLore(Collections.singletonList(lore));
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     @EventHandler
