@@ -32,6 +32,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scoreboard.Team;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -192,8 +193,8 @@ public class GameListener implements Listener {
             disguise.setHearSelfDisguise(true);
             disguise.setModifyBoundingBox(true);   
 
-            // FIXED: Enable friendly invisibles display properties natively on the Hiders Team via scoreboard parameters
-            plugin.getHidersTeam().setSeeFriendlyInvisibles(true);
+            // FIXED: Set teammate visibility parameters via standard Option Enums
+            plugin.getHidersTeam().setOption(Team.Option.SEE_FRIENDLY_INVISIBLES, Team.OptionStatus.ALWAYS);
 
             LivingWatcher watcher = disguise.getWatcher();
             if (watcher != null) {
@@ -340,7 +341,6 @@ public class GameListener implements Listener {
         player.openInventory(gui);
     }
 
-    // FIXED: Added missing local helper item builder inside GameListener
     private ItemStack createGuiItem(Material mat, String name, String lore) {
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
