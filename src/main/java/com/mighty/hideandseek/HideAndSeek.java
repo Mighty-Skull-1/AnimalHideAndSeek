@@ -56,7 +56,7 @@ public class HideAndSeek extends JavaPlugin {
         
         getServer().getPluginManager().registerEvents(new GameListener(this), this);
         
-        getLogger().info("Animal Hide and Seek V2.4 Enabled!");
+        getLogger().info("Animal Hide and Seek V2.4 patched and active!");
     }
 
     @Override
@@ -71,6 +71,9 @@ public class HideAndSeek extends JavaPlugin {
         hidersTeam = gameBoard.registerNewTeam("Hiders");
         hidersTeam.setPrefix("§a[Hider] ");
         hidersTeam.setColor(org.bukkit.ChatColor.GREEN);
+        
+        // FIXED: Universal version-proof teammate visibility allocation hook
+        hidersTeam.setCanSeeFriendlyInvisibles(true);
 
         seekersTeam = gameBoard.registerNewTeam("Seekers");
         seekersTeam.setPrefix("§c[Seeker] ");
@@ -131,7 +134,7 @@ public class HideAndSeek extends JavaPlugin {
                 host.setGameMode(GameMode.SURVIVAL);
                 host.getInventory().clear();
                 host.teleport(startLocation);
-                host.getInventory().addItem(getHelpBook()); // Give tutorial book
+                host.getInventory().addItem(getHelpBook()); 
                 
                 new BukkitRunnable() {
                     @Override
@@ -171,7 +174,7 @@ public class HideAndSeek extends JavaPlugin {
                     p.setGlowing(false);
                     p.teleport(startLocation);
                     p.sendTitle("§a§lRUN AWAY!", "§eYou have 10 seconds to find a spot!", 10, 40, 10);
-                    p.getInventory().addItem(getHelpBook()); // Give tutorial book to hiders
+                    p.getInventory().addItem(getHelpBook()); 
 
                     new BukkitRunnable() {
                         @Override
@@ -300,7 +303,6 @@ public class HideAndSeek extends JavaPlugin {
         }
     }
 
-    // FEATURE: Dynamic Tutorial Guide Book Generation
     public ItemStack getHelpBook() {
         ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
         BookMeta meta = (BookMeta) book.getItemMeta();

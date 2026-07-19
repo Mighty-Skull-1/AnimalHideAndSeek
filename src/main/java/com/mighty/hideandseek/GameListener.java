@@ -32,7 +32,6 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scoreboard.Team;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -192,9 +191,6 @@ public class GameListener implements Listener {
             disguise.setViewSelfDisguise(true);
             disguise.setHearSelfDisguise(true);
             disguise.setModifyBoundingBox(true);   
-
-            // FIXED: Set teammate visibility parameters via standard Option Enums
-            plugin.getHidersTeam().setOption(Team.Option.SEE_FRIENDLY_INVISIBLES, Team.OptionStatus.ALWAYS);
 
             LivingWatcher watcher = disguise.getWatcher();
             if (watcher != null) {
