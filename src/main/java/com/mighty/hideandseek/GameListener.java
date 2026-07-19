@@ -9,6 +9,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.Sound;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Biome;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
@@ -50,12 +52,10 @@ public class GameListener implements Listener {
         this.plugin = plugin;
     }
 
-    // FEATURE: Enforce Lock Placement and Freeze Mechanics
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
         if (plugin.isGameRunning() && plugin.getFrozenHiders().contains(player.getUniqueId())) {
-            // Cancel movement entirely but allow looking around smoothly
             if (event.getFrom().getX() != event.getTo().getX() || event.getFrom().getZ() != event.getTo().getZ() || event.getFrom().getY() != event.getTo().getY()) {
                 org.bukkit.Location back = event.getFrom().clone();
                 back.setYaw(event.getTo().getYaw());
@@ -72,25 +72,21 @@ public class GameListener implements Listener {
         }
     }
 
-    // FEATURE: 2-Second Sneak Activation System
     @EventHandler
     public void onToggleSneak(PlayerToggleSneakEvent event) {
         Player player = event.getPlayer();
         if (!plugin.isGameRunning() || !plugin.getHiders().contains(player.getUniqueId())) return;
 
         if (event.isSneaking()) {
-            // Start counting 2 seconds (40 ticks)
             BukkitRunnable task = new BukkitRunnable() {
                 @Override
                 public void run() {
                     if (player.isOnline() && player.isSneaking()) {
                         if (plugin.getFrozenHiders().contains(player.getUniqueId())) {
-                            // Unfreeze
                             plugin.getFrozenHiders().remove(player.getUniqueId());
                             player.sendTitle("§a§lUNFROZEN", "§7You can now run and slide!", 5, 20, 5);
                             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_CHIME, 1.0f, 1.5f);
                         } else {
-                            // Freeze
                             plugin.getFrozenHiders().add(player.getUniqueId());
                             player.sendTitle("§c§lFROZEN IN PLACE", "§7Sneak for 2s to unlock movement!", 5, 20, 5);
                             player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_PLACE, 0.5f, 2.0f);
@@ -99,9 +95,8 @@ public class GameListener implements Listener {
                 }
             };
             sneakTimerTasks.put(player.getUniqueId(), task);
-            task.runTaskLater(plugin, 40L); // 40 ticks = 2 seconds
+            task.runTaskLater(plugin, 40L); 
         } else {
-            // Player stopped sneaking early, cancel task execution
             if (sneakTimerTasks.containsKey(player.getUniqueId())) {
                 sneakTimerTasks.get(player.getUniqueId()).cancel();
                 sneakTimerTasks.remove(player.getUniqueId());
@@ -193,10 +188,12 @@ public class GameListener implements Listener {
 
         if (disguiseType != null) {
             MobDisguise disguise = new MobDisguise(disguiseType);
+            
+            // FIXED: Enable view self but disable the human ghost double clone render mechanics
             disguise.setViewSelfDisguise(true);
             disguise.setHearSelfDisguise(true);
-            disguise.setSelfDisguiseVisible(true);
-            disguise.setModifyBoundingBox(true); 
+            disguise.setSelfDisguiseVisible(false); // Eliminates human skin copy behind animal structure
+            disguise.setModifyBoundingBox(true);   // Forces standard volume scaling parameters natively
 
             LivingWatcher watcher = disguise.getWatcher();
             if (watcher != null) {
@@ -213,8 +210,10 @@ public class GameListener implements Listener {
 
             DisguiseAPI.disguiseToAll(player, disguise);
             applyMobPhysics(player, disguiseType);
+            applyMobHealth(player, disguiseType); // FEATURE: Blends health scale seamlessly
             
             plugin.getLockedCamoHiders().add(player.getUniqueId());
+            player.sendMessage("§aDisguise locked! Bounding boxes and health profiles mapped to " + disguiseType.name().toLowerCase() + ".");
             player.closeInventory();
         }
     }
@@ -251,6 +250,54 @@ public class GameListener implements Listener {
                 break;
             default:
                 break;
+        }
+    }
+
+    // FEATURE: Dynamic Health Profiler System
+    private void applyMobHealth(Player player, DisguiseType type) {
+        double healthPool = 20.0; // Default human value
+
+        switch (type) {
+            case RABBIT:
+            case BAT:
+                healthPool = 3.0; // 1.5 Hearts
+                break;
+            case CHICKEN:
+                healthPool = 4.0; // 2 Hearts
+                break;
+            case CAT:
+                healthPool = 10.0; // 5 Hearts
+                break;
+            case FOX:
+                healthPool = 20.0; // 10 Hearts
+                break;
+            case PIG:
+                healthPool = 10.0; // 5 Hearts
+                break;
+            case COW:
+            case SHEEP:
+                healthPool = 10.0; // 5 Hearts
+                break;
+            case WOLF:
+                healthPool = 20.0; // 10 Hearts
+                break;
+            case CREEPER:
+                healthPool = 20.0; 
+                break;
+            case SPIDER:
+                healthPool = 16.0; // 8 Hearts
+                break;
+            case IRON_GOLEM:
+                healthPool = 100.0; // 50 Hearts
+                break;
+            default:
+                break;
+        }
+
+        AttributeInstance attr = player.getAttribute(Attribute.MAX_HEALTH);
+        if (attr != null) {
+            attr.setBaseValue(healthPool);
+            player.setHealth(healthPool); // Instantly synchronize active tracking metrics
         }
     }
 
@@ -372,6 +419,7 @@ public class GameListener implements Listener {
             Bukkit.broadcastMessage("§6§l[TAUNT] " + player.getName() + " triggered a noisy alert nearby!");
             
             tauntCooldown.put(player.getUniqueId(), System.currentTimeMillis());
+            plugin.getLastTauntTime().put(player.getUniqueId(), System.currentTimeMillis());
             player.closeInventory();
         }
     }
@@ -422,10 +470,15 @@ public class GameListener implements Listener {
             DisguiseAPI.undisguiseToAll(player);
         }
         CamoCommand.clearMobPhysics(player);
+        
+        // Reset player max health attribute back to standard human scale (20.0) upon elimination
+        AttributeInstance attr = player.getAttribute(Attribute.MAX_HEALTH);
+        if (attr != null) attr.setBaseValue(20.0);
+
         player.getInventory().clear(); 
         player.removePotionEffect(PotionEffectType.SATURATION); 
         plugin.getHiders().remove(player.getUniqueId());
-        plugin.getFrozenHiders().remove(player.getUniqueId()); // Make sure to clean up freeze map profiles
+        plugin.getFrozenHiders().remove(player.getUniqueId()); 
         plugin.getHidersTeam().removeEntry(player.getName());
         player.setGameMode(GameMode.SPECTATOR);
         player.getWorld().playSound(player.getLocation(), Sound.ENTITY_LIGHTNING_BOLT_THUNDER, 1.0f, 1.0f);
