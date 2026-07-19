@@ -9,8 +9,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.Sound;
-import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Biome;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
@@ -189,9 +187,10 @@ public class GameListener implements Listener {
         if (disguiseType != null) {
             MobDisguise disguise = new MobDisguise(disguiseType);
             
+            // UNDID CHANGES: Returned to self-disguise visual clone rendering variables
             disguise.setViewSelfDisguise(true);
             disguise.setHearSelfDisguise(true);
-            disguise.setSelfDisguiseVisible(false); 
+            disguise.setSelfDisguiseVisible(true); // Restored original tracking view setup
             disguise.setModifyBoundingBox(true);   
 
             LivingWatcher watcher = disguise.getWatcher();
@@ -209,7 +208,7 @@ public class GameListener implements Listener {
 
             DisguiseAPI.disguiseToAll(player, disguise);
             applyMobPhysics(player, disguiseType);
-            applyMobHealth(player, disguiseType); 
+            // Health pool updates bypassed to retain standard 20.0 default profile
             
             plugin.getLockedCamoHiders().add(player.getUniqueId());
             player.closeInventory();
@@ -248,53 +247,6 @@ public class GameListener implements Listener {
                 break;
             default:
                 break;
-        }
-    }
-
-    private void applyMobHealth(Player player, DisguiseType type) {
-        double healthPool = 20.0;
-
-        switch (type) {
-            case RABBIT:
-            case BAT:
-                healthPool = 3.0; 
-                break;
-            case CHICKEN:
-                healthPool = 4.0; 
-                break;
-            case CAT:
-                healthPool = 10.0; 
-                break;
-            case FOX:
-                healthPool = 20.0; 
-                break;
-            case PIG:
-                healthPool = 10.0; 
-                break;
-            case COW:
-            case SHEEP:
-                healthPool = 10.0; 
-                break;
-            case WOLF:
-                healthPool = 20.0; 
-                break;
-            case CREEPER:
-                healthPool = 20.0; 
-                break;
-            case SPIDER:
-                healthPool = 16.0; 
-                break;
-            case IRON_GOLEM:
-                healthPool = 100.0; 
-                break;
-            default:
-                break;
-        }
-
-        AttributeInstance attr = player.getAttribute(Attribute.MAX_HEALTH);
-        if (attr != null) {
-            attr.setBaseValue(healthPool);
-            player.setHealth(healthPool); 
         }
     }
 
@@ -415,7 +367,6 @@ public class GameListener implements Listener {
             player.getWorld().playSound(player.getLocation(), soundToPlay, 3.0f, 1.0f);
             Bukkit.broadcastMessage("§6§l[TAUNT] " + player.getName() + " triggered a noisy alert nearby!");
             
-            // FIXED: Removed the missing background tracking map call
             tauntCooldown.put(player.getUniqueId(), System.currentTimeMillis());
             player.closeInventory();
         }
@@ -468,7 +419,8 @@ public class GameListener implements Listener {
         }
         CamoCommand.clearMobPhysics(player);
         
-        AttributeInstance attr = player.getAttribute(Attribute.MAX_HEALTH);
+        // Ensure standard attributes remain active upon dropping match profiles
+        org.bukkit.attribute.AttributeInstance attr = player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
         if (attr != null) attr.setBaseValue(20.0);
 
         player.getInventory().clear(); 
