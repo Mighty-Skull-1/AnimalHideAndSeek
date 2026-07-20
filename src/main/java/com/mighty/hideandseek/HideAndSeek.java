@@ -6,6 +6,8 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -26,6 +28,7 @@ public class HideAndSeek extends JavaPlugin {
     private final Set<UUID> lockedCamoHiders = new HashSet<>(); 
     private final Set<UUID> disconnectedHiders = new HashSet<>(); 
     private final Set<UUID> frozenHiders = new HashSet<>(); 
+    private final Set<DisguiseTypeEnum> availableDisguises = new HashSet<>(); // Dynamically tracked spawns
     
     private Scoreboard gameBoard;
     private Team hidersTeam;
@@ -42,6 +45,37 @@ public class HideAndSeek extends JavaPlugin {
     private boolean lateGameBuffsApplied = false;
     private boolean windChargesGiven = false;
 
+    // Helper enum to track standard UI mapping rules cleanly
+    private enum DisguiseTypeEnum {
+        PIG(Material.PORKCHOP, "§aPig Camo", "§7Disguise as a Pig", EntityType.PIG),
+        COW(Material.BEEF, "§eCow Camo", "§7Disguise as a Cow", EntityType.COW),
+        CHICKEN(Material.FEATHER, "§fChicken Camo", "§7Disguise as a Chicken", EntityType.CHICKEN),
+        SHEEP(Material.WHITE_WOOL, "§7Sheep Camo", "§7Disguise as a Sheep", EntityType.SHEEP),
+        WOLF(Material.BONE, "§7Wolf Camo", "§7Disguise as a Wolf", EntityType.WOLF),
+        FOX(Material.SWEET_BERRIES, "§6Fox Camo", "§7Disguise as a Fox", EntityType.FOX),
+        CAT(Material.COD, "§6Cat Camo", "§7Disguise as a Cat", EntityType.CAT),
+        RABBIT(Material.CARROT, "§aRabbit Camo", "§7Disguise as a Rabbit", EntityType.RABBIT),
+        BAT(Material.ECHO_SHARD, "§8Bat Camo", "§7Disguise as a Bat", EntityType.BAT),
+        CREEPER(Material.GUNPOWDER, "§2Creeper Camo", "§7Disguise as a Creeper", EntityType.CREEPER),
+        ZOMBIE(Material.ROTTEN_FLESH, "§2Zombie Camo", "§7Disguise as a Zombie", EntityType.ZOMBIE),
+        SKELETON(Material.ARROW, "§7Skeleton Camo", "§7Disguise as a Skeleton", EntityType.SKELETON),
+        SPIDER(Material.SPIDER_EYE, "§5Spider Camo", "§7Disguise as a Spider", EntityType.SPIDER),
+        IRON_GOLEM(Material.IRON_INGOT, "§fIron Golem Camo", "§7Disguise as an Iron Golem", EntityType.IRON_GOLEM),
+        VILLAGER(Material.EMERALD, "§aVillager Camo", "§7Disguise as a Biome Villager", EntityType.VILLAGER);
+
+        final Material mat;
+        final String name;
+        final String lore;
+        final EntityType type;
+
+        DisguiseTypeEnum(Material mat, String name, String lore, EntityType type) {
+            this.mat = mat;
+            this.name = name;
+            this.lore = lore;
+            this.type = type;
+        }
+    }
+
     @Override
     public void onEnable() {
         setupScoreboard();
@@ -56,7 +90,7 @@ public class HideAndSeek extends JavaPlugin {
         
         getServer().getPluginManager().registerEvents(new GameListener(this), this);
         
-        getLogger().info("Animal Hide and Seek V2.4 patched and active!");
+        getLogger().info("Animal Hide and Seek V2.5 Live!");
     }
 
     @Override
@@ -71,8 +105,6 @@ public class HideAndSeek extends JavaPlugin {
         hidersTeam = gameBoard.registerNewTeam("Hiders");
         hidersTeam.setPrefix("§a[Hider] ");
         hidersTeam.setColor(org.bukkit.ChatColor.GREEN);
-        
-        // FIXED: Universal version-proof teammate visibility allocation hook
         hidersTeam.setCanSeeFriendlyInvisibles(true);
 
         seekersTeam = gameBoard.registerNewTeam("Seekers");
@@ -113,6 +145,23 @@ public class HideAndSeek extends JavaPlugin {
         lateGameBuffsApplied = false;
         windChargesGiven = false;
         this.startLocation = hostLocation.clone();
+
+        // FEATURE: Scan the map arena for living decoy entities (50 block radius)
+        availableDisguises.clear();
+        Collection<Entity> nearbyEntities = hostLocation.getWorld().getNearbyEntities(hostLocation, 50, 50, 50);
+        
+        for (Entity entity : nearbyEntities) {
+            for (DisguiseTypeEnum disguise : DisguiseTypeEnum.values()) {
+                if (entity.getType() == disguise.type) {
+                    availableDisguises.add(disguise);
+                }
+            }
+        }
+
+        // Safety fallback: If the map builder forgot to spawn any animals, unlock everything so the game doesn't break
+        if (availableDisguises.isEmpty()) {
+            availableDisguises.addAll(Arrays.asList(DisguiseTypeEnum.values()));
+        }
 
         List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
         if (players.isEmpty()) return;
@@ -328,23 +377,16 @@ public class HideAndSeek extends JavaPlugin {
         return book;
     }
 
+    // FEATURE: Dynamic UI Populator based on existing map scans
     public void openCamoSelectionGUI(Player player) {
         Inventory gui = Bukkit.createInventory(null, 18, "§6§lChoose Your Camo!");
-        gui.setItem(0, createGuiItem(Material.PORKCHOP, "§aPig Camo", "§7Disguise as a Pig"));
-        gui.setItem(1, createGuiItem(Material.BEEF, "§eCow Camo", "§7Disguise as a Cow"));
-        gui.setItem(2, createGuiItem(Material.FEATHER, "§fChicken Camo", "§7Disguise as a Chicken"));
-        gui.setItem(3, createGuiItem(Material.WHITE_WOOL, "§7Sheep Camo", "§7Disguise as a Sheep"));
-        gui.setItem(4, createGuiItem(Material.BONE, "§7Wolf Camo", "§7Disguise as a Wolf"));
-        gui.setItem(5, createGuiItem(Material.SWEET_BERRIES, "§6Fox Camo", "§7Disguise as a Fox"));
-        gui.setItem(6, createGuiItem(Material.COD, "§6Cat Camo", "§7Disguise as a Cat"));
-        gui.setItem(7, createGuiItem(Material.CARROT, "§aRabbit Camo", "§7Disguise as a Rabbit"));
-        gui.setItem(8, createGuiItem(Material.ECHO_SHARD, "§8Bat Camo", "§7Disguise as a Bat"));
-        gui.setItem(9, createGuiItem(Material.GUNPOWDER, "§2Creeper Camo", "§7Disguise as a Creeper"));
-        gui.setItem(10, createGuiItem(Material.ROTTEN_FLESH, "§2Zombie Camo", "§7Disguise as a Zombie"));
-        gui.setItem(11, createGuiItem(Material.ARROW, "§7Skeleton Camo", "§7Disguise as a Skeleton"));
-        gui.setItem(12, createGuiItem(Material.SPIDER_EYE, "§5Spider Camo", "§7Disguise as a Spider"));
-        gui.setItem(13, createGuiItem(Material.IRON_INGOT, "§fIron Golem Camo", "§7Disguise as an Iron Golem"));
-        gui.setItem(14, createGuiItem(Material.EMERALD, "§aVillager Camo", "§7Disguise as a Biome Villager"));
+        
+        int slot = 0;
+        for (DisguiseTypeEnum disguise : availableDisguises) {
+            if (slot >= 18) break; // Keep inside limits
+            gui.setItem(slot, createGuiItem(disguise.mat, disguise.name, disguise.lore));
+            slot++;
+        }
         player.openInventory(gui);
     }
 
@@ -412,6 +454,7 @@ public class HideAndSeek extends JavaPlugin {
         lockedCamoHiders.clear();
         disconnectedHiders.clear();
         frozenHiders.clear();
+        availableDisguises.clear();
     }
 
     public boolean isGameRunning() { return gameRunning; }
