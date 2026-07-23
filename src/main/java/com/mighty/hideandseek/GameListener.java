@@ -32,6 +32,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.Vector;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,22 +52,29 @@ public class GameListener implements Listener {
         this.plugin = plugin;
     }
 
+    // FEATURE: Anti-Drift and Velocity Lock Engine
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
-        if (plugin.isGameRunning() && plugin.getFrozenHiders().contains(player.getUniqueId())) {
+        if (!plugin.isGameRunning()) return;
+
+        // 1. Frozen Player Lock: Lock position completely but allow camera rotation
+        if (plugin.getFrozenHiders().contains(player.getUniqueId())) {
             if (event.getFrom().getX() != event.getTo().getX() || event.getFrom().getZ() != event.getTo().getZ() || event.getFrom().getY() != event.getTo().getY()) {
                 org.bukkit.Location back = event.getFrom().clone();
                 back.setYaw(event.getTo().getYaw());
                 back.setPitch(event.getTo().getPitch());
                 event.setTo(back);
             }
+            player.setVelocity(new Vector(0, player.getVelocity().getY() < 0 ? player.getVelocity().getY() : 0, 0));
             return;
         }
 
+        // 2. Disguised Player Anti-Drift: Kill horizontal momentum when not actively moving
         if (DisguiseAPI.isDisguised(player)) {
             if (event.getFrom().getX() == event.getTo().getX() && event.getFrom().getZ() == event.getTo().getZ()) {
-                player.setVelocity(new org.bukkit.util.Vector(0, player.getVelocity().getY(), 0));
+                Vector currentVel = player.getVelocity();
+                player.setVelocity(new Vector(0, currentVel.getY(), 0));
             }
         }
     }
